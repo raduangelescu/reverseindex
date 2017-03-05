@@ -25,6 +25,9 @@
     <ClInclude Include="mainapp.h">
       <Filter>src</Filter>
     </ClInclude>
+    <ClInclude Include="coocurancematrix.h">
+      <Filter>src</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stemmer.cpp">
@@ -43,6 +46,9 @@
       <Filter>src</Filter>
     </ClCompile>
     <ClCompile Include="main.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="coocurancematrix.cpp">
       <Filter>src</Filter>
     </ClCompile>
   </ItemGroup>

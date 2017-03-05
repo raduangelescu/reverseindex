@@ -12,7 +12,7 @@ struct SSentence
 struct SDocumentInfo
 {
 	int     rank;
-	unsigned short documentID;
+	unsigned int documentID;
 	std::vector<unsigned short> fileOffset;
 };
 
@@ -29,6 +29,8 @@ struct SWordInfo
 	//Serialize/Deserialize structure
 	void writeBinary(std::ofstream & outf);
 	void readBinary(std::ifstream & inf);
+
+	float countBigram(SWordInfo *other, int maxdst, int offset);
 };
 
 struct ResultRanked

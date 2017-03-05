@@ -4,6 +4,8 @@
 enum EMainApp
 {
 	INIT,
+	BUILD_COOCURANCE,
+	TRAIN_GLOVE,
 	QUERY_SERVER
 };
 

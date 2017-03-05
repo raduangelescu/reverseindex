@@ -8,8 +8,20 @@
 
 #include "config.h"
 
+
+
+SResumeFile::SResumeFile()
+#ifdef USE_JUDY_ARRAY
+	:m_judyArrayWordCount(0)
+#endif 
+{
+}
+
 void SResumeFile::updateWord(std::string &wordstr, unsigned int DocumentID, unsigned int offset)
 {
+	if (max_document_id < DocumentID)
+		max_document_id = DocumentID;
+
 	if (wordstr.length() <= c_min_word_length)
 	{
 		return;
@@ -20,8 +32,6 @@ void SResumeFile::updateWord(std::string &wordstr, unsigned int DocumentID, unsi
 	if (contains_non_alpha)
 		return;
 
-	//wordstr.erase(remove_if(wordstr.begin(), wordstr.end(), [](char c) { return !isalpha((unsigned char)c); }), wordstr.end());
-
 	Porter2Stemmer::stem(wordstr);
 
 	if (wordstr.length() <= c_min_word_length)
@@ -29,9 +39,12 @@ void SResumeFile::updateWord(std::string &wordstr, unsigned int DocumentID, unsi
 		return;
 	}
 	bool wordExistsInDb = false;
+
+
 #ifdef USE_JUDY_ARRAY
 	Pvoid_t getWord = NULL;
 	JSLG(getWord, words, (const uint8_t*)wordstr.c_str());
+	
 	wordExistsInDb = (getWord != NULL);
 #else
 	std::map<std::string, SWordInfo*>::iterator lo = words.find(wordstr);
@@ -39,10 +52,12 @@ void SResumeFile::updateWord(std::string &wordstr, unsigned int DocumentID, unsi
 #endif
 
 
+
 	if (!wordExistsInDb)
 	{
 #ifdef USE_JUDY_ARRAY
 		Pvoid_t insertNewWord;
+
 		JSLI(insertNewWord, words, (const uint8_t *)wordstr.c_str());
 		SWordInfo** getWordSW = (SWordInfo**)insertNewWord;
 		*getWordSW = new SWordInfo();
@@ -60,14 +75,15 @@ void SResumeFile::updateWord(std::string &wordstr, unsigned int DocumentID, unsi
 	}
 	else
 	{
+		
 #ifdef USE_JUDY_ARRAY
 		SWordInfo** getWordInfo = (SWordInfo**)getWord;
 		(*getWordInfo)->updateWordInfo(DocumentID, offset);
+		
 #else
 		lo->second->updateWordInfo(DocumentID, offset);
 #endif
 	}
-
 
 }
 void SResumeFile::QueryRelationWords(std::vector<std::string> &inWords, std::vector<SDocumentInfo> &outWords, E_QUERYRELATION relation)
@@ -163,6 +179,8 @@ void SResumeFile::writeBinary(std::ofstream & outf)
 	sz = words.size();
 #endif
 	outf.write((char*)&sz, sizeof(size_t));
+	//write max document id
+	outf.write((char*)&max_document_id, sizeof(unsigned int));
 #ifdef USE_JUDY_ARRAY
 	Pcvoid_t iterValue;
 	uint8_t   index[JUDY_MAX_INDEX_LEN] = { 0 };
@@ -191,16 +209,18 @@ void SResumeFile::writeBinary(std::ofstream & outf)
 
 void SResumeFile::readBinary(std::ifstream & inf)
 {
-	size_t readNum;
-	inf.read((char*)&readNum, sizeof(size_t));
-	for (unsigned int i = 0; i < readNum; i++)
+	inf.read((char*)&m_judyArrayWordCount, sizeof(size_t));
+	//read max document id
+	inf.read((char*)&max_document_id, sizeof(unsigned int));
+	document_words.resize(max_document_id + 1);
+
+	for (unsigned int i = 0; i < m_judyArrayWordCount; i++)
 	{
 		size_t sizeword;
 
 		char tempbuffer[2048];
 		inf.read((char*)&sizeword, sizeof(size_t));
 		inf.read(tempbuffer, sizeword);
-
 		
 		tempbuffer[sizeword] = 0;
 		size_t documentSize = 0;
@@ -213,11 +233,10 @@ void SResumeFile::readBinary(std::ifstream & inf)
 
 		documentSize = (*newItem)->documentIDS.size();
 
-
 		for (unsigned int j = 0; j < documentSize; j++)
 		{
 			unsigned int docid = (*newItem)->documentIDS[j].documentID;
-			JLI(insertNewWord, documents, docid);
+			document_words[docid].push_back(*newItem);
 		}
 #else
 		std::pair<std::string, SWordInfo*> newItem;

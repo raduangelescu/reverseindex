@@ -10,6 +10,7 @@
 #include "stemmer.h"
 #include "helperstructs.h"
 #include "resumefile.h"
+#include "coocurancematrix.h"
 
 #include "config.h"
 
@@ -100,7 +101,6 @@ void MainApp::Query()
 
 void MainApp::InitDB()
 {
-	SResumeFile dictFile;
 	//Read file names from header
 	std::vector<std::string> fileNames;
 	std::ifstream header("data_raw/header.txt");
@@ -117,9 +117,7 @@ void MainApp::InitDB()
 	//process files
 	char block[c_block_size];
 
-	unsigned int DocumentID = 0;
-
-	for (unsigned int bk = 0; bk < fileNames.size(); bk++)
+	for ( int bk = 0; bk < fileNames.size(); bk++)
 	{
 		char fname[1024];
 		std::vector<SSentence> sentences;
@@ -154,7 +152,7 @@ void MainApp::InitDB()
 		while (putSentenceID < sentenceIdx)
 		{
 			char filename[256];
-			sprintf(filename, "file_blocks/file%d.txt", DocumentID);
+			sprintf(filename, "file_blocks/file%d.txt", bk);
 			FILE *fileBlock = fopen(filename, "w");
 
 			unsigned int k = 0;
@@ -194,19 +192,17 @@ void MainApp::InitDB()
 				int current_offset = (int)(word - block);
 
 				std::string wordstr = std::string(word);
-				dictFile.updateWord(wordstr, DocumentID, current_offset);
+				m_dictFileRead.updateWord(wordstr, bk, current_offset);
 
 				word = strtok(NULL, " ,\n.\r");
 			}
-
-			DocumentID++;
 
 		}
 		free(outData.data);
 	}
 
 	std::ofstream fout("dictFile.bin", std::fstream::binary);
-	dictFile.writeBinary(fout);
+	m_dictFileRead.writeBinary(fout);
 	fout.close();
 }
 
@@ -220,7 +216,38 @@ void MainApp::Run(EMainApp type)
 			InitDB();
 			break;
 		}
-		
+		case EMainApp::BUILD_COOCURANCE:
+		{
+			//Load the dict in memory
+			std::ifstream fin("dictFile.bin", std::fstream::binary);
+			m_dictFileRead.readBinary(fin);
+			fin.close();
+			
+			std::ofstream fout("coomtx.bin", std::fstream::binary);
+
+			CoocuranceMatrix mtx;
+			mtx.Init(&m_dictFileRead);
+			mtx.writeBinary(fout);
+			fin.close();
+
+			bool isDone = false;
+			while (!isDone)
+			{
+			}
+			break;
+		}
+
+		case EMainApp::TRAIN_GLOVE:
+		{
+			std::ifstream fin("coomtx.bin", std::fstream::binary);
+			CoocuranceMatrix mtx;
+			mtx.readBinary(fin);
+
+			fin.close();
+
+			break;
+		}
+
 		case EMainApp::QUERY_SERVER:
 		{
 			std::ifstream fin("dictFile.bin", std::fstream::binary);
