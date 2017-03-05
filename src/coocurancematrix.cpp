@@ -34,7 +34,7 @@ void CoocuranceMatrix::Init(SResumeFile *dict)
 	omp_lock_t readLock;
 	omp_init_lock(&readLock);
 	size_t done = 0;
-	size_t wsize = m_words.size()/100;
+	size_t wsize = m_words.size();
 #pragma omp parallel for
 	for (int i = 0; i < wsize; i++)
 	{
