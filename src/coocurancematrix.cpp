@@ -4,6 +4,7 @@
 CoocuranceMatrix::CoocuranceMatrix()
 {
 	m_numEntries = 0;
+	write_CoocuranceMatrix = NULL;
 }
 
 void CoocuranceMatrix::Init(SResumeFile *dict)
@@ -11,13 +12,14 @@ void CoocuranceMatrix::Init(SResumeFile *dict)
 	m_numEntries = 0;
 	//Prepare a word vector
 	int max_threads_num = omp_get_max_threads();
-#ifdef USE_JUDY_ARRAY
-	Pvoid_t *tmp_CoocuranceMatrix = new Pvoid_t[max_threads_num];
+
+	write_CoocuranceMatrix = new std::vector<std::pair<unsigned long long, double>>[max_threads_num];
 	for (unsigned int i = 0; i < max_threads_num; i++)
 	{
-		tmp_CoocuranceMatrix[i] = (Pvoid_t)NULL;
+		write_CoocuranceMatrix[i].reserve(m_words.size());
 	}
 
+#ifdef USE_JUDY_ARRAY
 	Pcvoid_t iterValue;
 	uint8_t   index[JUDY_MAX_INDEX_LEN] = { 0 };
 
@@ -38,26 +40,29 @@ void CoocuranceMatrix::Init(SResumeFile *dict)
 #pragma omp parallel for
 	for (int i = 0; i < wsize; i++)
 	{
-		int tid = omp_get_thread_num();
-		Pvoid_t &tmp_cmtx = tmp_CoocuranceMatrix[tid];
-		SWordInfo *winf1 = 0;
-		Pvoid_t getWord1 = NULL;
-		omp_set_lock(&readLock);
 #pragma omp atomic
 		done++;
 		printf(" Doing word %I64u/%I64u \r", done, wsize);
+
+		int tid = omp_get_thread_num();
+		SWordInfo *winf1 = 0;
+		Pvoid_t getWord1 = NULL;
 		
+		omp_set_lock(&readLock);
 		JSLG(getWord1, dict->words, (const uint8_t*)m_words[i].c_str());
 		omp_unset_lock(&readLock);
+		
 		winf1 = ((SWordInfo**)getWord1)[0];
 
 		for (unsigned int j = i+1; j < wsize; j++)
 		{
 			SWordInfo *winf2 = 0;
 			Pvoid_t getWord2 = NULL;
+			
 			omp_set_lock(&readLock);
 			JSLG(getWord2, dict->words, (const uint8_t*)m_words[j].c_str());
 			omp_unset_lock(&readLock);
+			
 			size_t word_size = strlen(m_words[j].c_str());
 			winf2 = ((SWordInfo**)getWord2)[0];
 
@@ -66,70 +71,47 @@ void CoocuranceMatrix::Init(SResumeFile *dict)
 
 			if (dist <= c_min_word_distance)
 				continue;
+
 			//hash map index
 			Word_t  index = GetId(i, j);
 			Pvoid_t  ptr_count = NULL;
-			
-			JLG(ptr_count, tmp_cmtx, index);
-			if (ptr_count)
-			{
-				double count = (*(double *)ptr_count) + dist;
-				(*(double *)ptr_count) = count;
-			}
-			else
-			{
-#pragma omp atomic
-				m_numEntries++;
-				JLI(ptr_count, tmp_cmtx, index);
-				(*(double *)ptr_count) = 1.0;
-		
-			}
-			
+			write_CoocuranceMatrix[tid].push_back(std::pair<unsigned long long, double>(index, dist));
+	
 		}
 	}
 
 	printf("NUM is %I64u ", m_numEntries);
-
-	printf("\nMerging\n");
-	//Merge Judy Arrays
-	for (unsigned int i = 0; i < max_threads_num; i++)
-	{
-		Pvoid_t ptr_count = NULL;
-		Word_t indexW = 0;
-
-		JLF(ptr_count, tmp_CoocuranceMatrix[i], indexW)
-		for (; ptr_count != NULL; )
-		{
-			double value = *(double*)ptr_count;
-			Pvoid_t entry = NULL;
-			Word_t newIndex = indexW;
-			JLI(entry, m_coocuranceMatrix, newIndex);
-			(*(double*)entry) = value;
-			JLN(ptr_count, tmp_CoocuranceMatrix[i], indexW);
-		}
-	}
-	delete []tmp_CoocuranceMatrix;
+	
 	printf("\nDone\n");
 }
 
 
 void CoocuranceMatrix::writeBinary(std::ofstream &outf)
 {
-#ifdef USE_JUDY_ARRAY
-	Pvoid_t ptr_count = NULL;
-	Word_t indexW = 0;
+	int max_threads_num = omp_get_max_threads();
+	size_t size = 0;
+	for (unsigned int i = 0; i < max_threads_num; i++)
+	{
+		size += write_CoocuranceMatrix[i].size();
+	
+	}
+	outf.write((char*)&size, sizeof(size_t));
 
-	outf.write((char*)&m_numEntries, sizeof(unsigned int));
-	JLF(ptr_count, m_coocuranceMatrix, indexW)
-		for (; ptr_count != NULL; )
+	for (unsigned int i = 0; i < max_threads_num; i++)
+	{
+		std::vector<std::pair<unsigned long long, double>> &ref = write_CoocuranceMatrix[i];
+		for (unsigned int j = 0; j < ref.size(); j++)
 		{
-			double* float_ = (double*)ptr_count;
-			outf.write((char*)&indexW, sizeof(Word_t));
-			outf.write((char*)&float_[0], sizeof(double));
-
-			JLN(ptr_count, m_coocuranceMatrix, indexW);
+			outf.write((char*)&ref[j].first, sizeof(Word_t));
+			outf.write((char*)&ref[j].second, sizeof(double));
 		}
-#endif
+	}
+
+}
+
+CoocuranceMatrix::~CoocuranceMatrix()
+{
+	delete [] write_CoocuranceMatrix;
 }
 
 void CoocuranceMatrix::readBinary(std::ifstream &inf)
@@ -138,7 +120,7 @@ void CoocuranceMatrix::readBinary(std::ifstream &inf)
 	Pvoid_t ptr_count = NULL;
 	Word_t indexW = 0;
 
-	inf.read((char*)&m_numEntries, sizeof(size_t));
+	inf.read((char*)&m_numEntries, sizeof(unsigned int));
 
 	for (int i =0 ; i < m_numEntries; i++ )
 	{

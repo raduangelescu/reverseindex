@@ -10,6 +10,7 @@ struct CoocuranceMatrix
 {
 	size_t m_numEntries;
 
+	std::vector<std::pair<unsigned long long, double>> *write_CoocuranceMatrix;
 #ifdef USE_JUDY_ARRAY
 	Pvoid_t m_coocuranceMatrix		= (Pvoid_t)NULL; 
 #else
@@ -19,6 +20,7 @@ struct CoocuranceMatrix
 	std::vector<std::string> m_words;
 
 	CoocuranceMatrix();
+	~CoocuranceMatrix();
 	void Init(SResumeFile *dict);
 
 	//Cantor pairing function https://en.wikipedia.org/wiki/Pairing_function
